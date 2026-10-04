@@ -10,7 +10,8 @@ import time
 
 import envio
 from cargar_buscados import PLACAS_BUSCADAS
-from generadores import evento_acustico, evento_lpr, evento_panico, evento_reporte, evento_velocidad
+from generadores import (evento_acustico, evento_lpr, evento_panico, evento_reporte, evento_velocidad,
+                         placa_aleatoria)
 
 log = logging.getLogger("escenarios")
 
@@ -27,8 +28,6 @@ ESPERADAS = {
     "ESC-RUIDO-01": "PANICO_NO_CONFIRMADO",
 }
 
-# Placa del escenario de tramo (sintética, no está en la lista de buscados)
-PLACA_TRAMO = "P482KTV"
 # SJS-04 a SJS-02 hay unos 3.33 km entre centros: 120 s equivalen a ~100 km/h
 SEGUNDOS_TRAMO = 120
 
@@ -36,6 +35,9 @@ SEGUNDOS_TRAMO = 120
 def pasos(nombre):
     """Devuelve la lista de pasos (espera, función) del escenario. e = escenarioId."""
     e = nombre
+    # Placa nueva en cada corrida: el correlador recuerda cada vehículo 1 hora, y con
+    # una placa fija se mezclarían las lecturas de corridas anteriores
+    placa_tramo = placa_aleatoria()
     guiones = {
         "ESC-ROBO-01": [
             (0, lambda: evento_panico("SJS-05", "PANICO", e, centro=True)),
@@ -57,8 +59,8 @@ def pasos(nombre):
         "ESC-TRAMO-01": [
             # Velocidad legal en cada cámara y llegada como ENTRADA a Sajcavillá (donde corre
             # ESC-RUIDO-01 con un pánico): así solo debe dispararse la regla R05
-            (0, lambda: evento_lpr("SJS-04", PLACA_TRAMO, 55, "SALIDA", e, centro=True, numero=1)),
-            (SEGUNDOS_TRAMO, lambda: evento_lpr("SJS-02", PLACA_TRAMO, 45, "ENTRADA", e, centro=True, numero=1)),
+            (0, lambda: evento_lpr("SJS-04", placa_tramo, 55, "SALIDA", e, centro=True, numero=1)),
+            (SEGUNDOS_TRAMO, lambda: evento_lpr("SJS-02", placa_tramo, 45, "ENTRADA", e, centro=True, numero=1)),
         ],
         "ESC-ESCOLAR-01": [
             (0, lambda: evento_velocidad("SJS-01", 45, "EXCESO_VELOCIDAD", e, centro=True)),

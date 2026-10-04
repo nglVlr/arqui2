@@ -36,6 +36,11 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Medido en la Fase 2: 30 eventos con los 3 ingestores = 10/10/10. Con `ingestor-2` detenido: 30 de 30 respondieron 200 (14 ingestor-1, 16 ingestor-3), cero errores para el cliente. Al volver a arrancarlo se reintegró solo (3/3/3).
 - `zone` + `resolve` en el upstream de NGINX: si un ingestor se reinicia y Docker le da otra IP, NGINX la vuelve a resolver; además NGINX puede arrancar aunque falte un ingestor.
 - Dead-letter: todo evento rechazado va a `events.invalid` con motivo, ingestor, hora y el original. Nada se descarta en silencio.
+- Correlador con commit manual del offset al final de cada lote, en este orden: PostgreSQL, alertas a Kafka, marca de procesados en Redis y offset de Kafka. Si se cae en medio, el lote se reprocesa (al menos una vez) y no se pierde nada.
+- Desviación consciente del plan: el plan sugería `SET evento:{id} NX` al inicio. Se cambió a "revisar al inicio y marcar al final" porque con NX al inicio, una caída entre la marca y el guardado haría que el evento se descarte como duplicado al reprocesar, es decir, se perdería. Además `INSERT ... ON CONFLICT DO NOTHING` en `events` y los cooldowns en Redis evitan duplicados en la base y en las alertas.
+- Prueba de la Fase 4 (90 s de tráfico normal, reinicio del correlador a los 35 s): 448 eventos aceptados por los ingestores = 448 en PostgreSQL, 0 alertas duplicadas. Latencia de proceso (emitido a procesado) p50 111 ms, p95 199 ms, máximo 204 ms, incluido el reinicio.
+- Apagado ordenado: el correlador atiende SIGTERM, termina el lote y cierra el consumidor (avisa a Kafka). Medido: detenido y de vuelta procesando en menos de 1 s. Sin esto, en la primera prueba Kafka tardó unos 32 s en reasignar las particiones (esperaba que venciera la sesión del consumidor muerto, 45 s por defecto). Se bajó `session.timeout.ms` a 10 s para el caso de caída abrupta (kill o falla).
+- Errores de PostgreSQL o Redis dentro del correlador: el proceso termina y Docker lo reinicia (`restart: unless-stopped`). Es más simple y seguro que reintentar a mano: retoma desde el último offset confirmado.
 - Productor con `acks=all` e idempotencia. Si Kafka no confirma en 5 s, el ingestor responde 503 y el cliente reintenta. Esto puede generar duplicados (el evento quedó en la cola interna y luego se entregó), por eso el correlador descarta duplicados por `eventId` (entrega al menos una vez + deduplicación).
 
 ## 7. Seguridad y privacidad
@@ -47,7 +52,21 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Las contraseñas y la clave HMAC de placas se generan aleatoriamente (generador criptográfico) y viven solo en `.env`, que no se sube a git. Se entrega `.env.example` con valores de ejemplo.
 
 ## 8. Observabilidad y SLOs
-- Pendiente.
+- SLO de latencia: `latencyMs` = hora de creación de la alerta menos `emittedAt` del último evento que completó la regla; umbral 2000 ms (`SLO_LATENCIA_MS`). Si se supera: log WARNING e insert en `slo_violations`.
+- Medido en la Fase 4 (escenarios con velocidad 4): latencias de 36 a 194 ms en las 7 reglas en tiempo real.
+- Hallazgo: con `consume(timeout=1.0)` el correlador esperaba hasta 1 s para juntar un lote cuando hay poco tráfico, y la latencia rondaba los 800 ms. Con `timeout=0.2` bajó a unos 100 a 200 ms.
+- Al procesar un atraso (por ejemplo tras una caída) las alertas salen con latencias altas y quedan registradas como violaciones de SLO. Es lo correcto: el SLO mide lo que vivió el operador.
+- Los falsos positivos (`PANICO_NO_CONFIRMADO`) no cuentan para el SLO: por definición esperan la ventana completa. Su `latencyMs` se mide desde el cierre de la ventana (hasta unos 10 s, porque la revisión es cada 10 s).
+
+## Reglas de correlación
+- Resultado de `evaluar.py` en la Fase 4: 9 de 9 escenarios con su alerta esperada (ventana de 60 s, `--velocidad 4`, `SCHOOL_HOURS=00:00-23:59` para poder probar ESC-ESCOLAR-01 a cualquier hora).
+- Una regla solo se dispara si el evento recién llegado participa en ella; los eventos usados se marcan por tipo de alerta y hay cooldown por regla y sector.
+- Cooldown por placa (no por sector) en R05 y R07: dos vehículos distintos en el mismo sector son dos alertas distintas.
+- Ventana por hora del evento (no del reloj): al reprocesar un atraso, los eventos siguen correlacionándose entre sí.
+- Caso límite encontrado: ESC-ACCIDENTE-01 separa sus eventos exactamente 60 s; con ventana de 60 s y velocidad 1, el primer evento queda fuera por milisegundos. En la demo con ventana de 60 s usar `--velocidad 2` o más (o una ventana de 90 s).
+- ESC-ROBO-01 genera además ZONA_ESCOLAR cuando se ejecuta en horario escolar: el radar de 92 km/h está en Ciudad Quetzal, que es zona escolar. Es una alerta correcta, no un falso positivo; `evaluar.py` la muestra como "adicional".
+- Interferencia observada: un escenario puede quedar bloqueado por el cooldown de una alerta igual del tráfico normal en el mismo sector (le pasó a ESC-ESCOLAR-01 en la primera corrida). Para evaluar escenarios conviene correrlos sin tráfico normal.
+- Fórmula del score documentada en `servicios/correlador/calculos.py`.
 
 ## Calidad de datos (validación en el ingestor)
 - Pydantic valida campos obligatorios, tipos y catálogos (`Literal`). Reglas externas aparte: sector existente, límites del municipio, hora (no más de 5 s en el futuro ni 24 h en el pasado).

@@ -177,6 +177,38 @@ services:
       - ingestor-2
       - ingestor-3
 
+  # ------------------------------------------------------------- Correlador
+  # Consumer group "correlador". Si PostgreSQL o Redis fallan, el proceso
+  # termina y Docker lo reinicia: retoma desde el último lote confirmado.
+  correlador:
+    build: ./servicios/correlador
+    image: monitoreo-sjs/correlador:1.0
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      SECTORES_PATH: /config/sectores.json
+      CORRELATION_WINDOW_SECONDS: ${CORRELATION_WINDOW_SECONDS}
+      ACOUSTIC_MIN_PROBABILITY: ${ACOUSTIC_MIN_PROBABILITY}
+      SLO_LATENCIA_MS: ${SLO_LATENCIA_MS}
+      SCHOOL_HOURS: ${SCHOOL_HOURS}
+      TZ: ${TZ}
+    volumes:
+      - ./config:/config:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # -------------------------------------------------------------- Simulador
   # No queda corriendo: tiene su propio perfil y se usa con
   #   docker compose run --rm simulador simulador.py normal
