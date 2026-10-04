@@ -38,6 +38,7 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Decisión: Docker Compose con perfiles `core` y `full` en un solo servidor. Kubernetes no aporta en un solo nodo: agrega plano de control (más memoria), manifiestos y conceptos (pods, services, ingress) sin ganar alta disponibilidad real, porque si cae la máquina cae todo igual.
 - Consumo medido en la Fase 7 (perfil full con tráfico normal, `docker stats`): 4.1 GB en total de los 20 GB de WSL2. Los más pesados: Elasticsearch 1.5 GB, Airflow 1.33 GB, Kafka 0.49 GB, Kafka UI 0.33 GB; cada servicio Python usa menos de 40 MB. Suma de los `mem_limit`: unos 12.4 GB, dentro de los 20 GB.
 - `mem_limit` en cada servicio para que uno descontrolado no tumbe a los demás; `healthcheck` + `depends_on: service_healthy` para el orden de arranque; `restart: unless-stopped` para recuperarse solos.
+- Verificación final de la Fase 9 (repositorio clonado en una carpeta nueva, siguiendo solo el README, con volúmenes nuevos): todo el perfil full arrancó de cero; 3 dashboards, 2 datasources, 3 DAGs sin errores, 6 topics; 8 de 9 escenarios a las 11:58 (ESC-ESCOLAR-01 quedó fuera del horario escolar, como se documenta) y 9 de 9 al repetir ESC-ESCOLAR-01 a las 12:01 con el horario por defecto; 10 alertas en PostgreSQL = 10 en Elasticsearch.
 - Cambiar de perfil: `docker compose --profile core down` y luego `docker compose --profile full up -d` (los volúmenes conservan los datos).
 
 ## Elasticsearch
