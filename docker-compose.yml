@@ -124,6 +124,59 @@ services:
       timeout: 3s
       retries: 12
 
+  # ------------------------------------------------------ Pool de ingestión
+  # Tres copias del mismo código; solo cambia INGESTOR_ID.
+  # No publican puertos: solo se llega a ellos a través de NGINX.
+  ingestor-1: &ingestor
+    build: ./servicios/ingestor
+    image: monitoreo-sjs/ingestor:1.0
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      INGESTOR_ID: ingestor-1
+      KAFKA_BOOTSTRAP: kafka:9092
+      SECTORES_PATH: /config/sectores.json
+      TZ: ${TZ}
+    volumes:
+      - ./config:/config:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+
+  ingestor-2:
+    <<: *ingestor
+    environment:
+      INGESTOR_ID: ingestor-2
+      KAFKA_BOOTSTRAP: kafka:9092
+      SECTORES_PATH: /config/sectores.json
+      TZ: ${TZ}
+
+  ingestor-3:
+    <<: *ingestor
+    environment:
+      INGESTOR_ID: ingestor-3
+      KAFKA_BOOTSTRAP: kafka:9092
+      SECTORES_PATH: /config/sectores.json
+      TZ: ${TZ}
+
+  # Balanceador: única puerta de entrada de eventos (puerto 8080 del host)
+  nginx:
+    image: nginx:1.30.5-alpine
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ingestor-1
+      - ingestor-2
+      - ingestor-3
+
   # ---------------------------------------------------------------- Grafana
   grafana:
     image: grafana/grafana:12.4.12

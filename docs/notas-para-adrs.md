@@ -31,16 +31,27 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Pendiente.
 
 ## 6. Resiliencia
-- Pendiente.
+- Pool de 3 ingestores detrás de NGINX en round robin con `max_fails=2 fail_timeout=10s` y `proxy_next_upstream` (si un ingestor no responde, NGINX reintenta la misma petición en otro).
+- Medido en la Fase 2: 30 eventos con los 3 ingestores = 10/10/10. Con `ingestor-2` detenido: 30 de 30 respondieron 200 (14 ingestor-1, 16 ingestor-3), cero errores para el cliente. Al volver a arrancarlo se reintegró solo (3/3/3).
+- `zone` + `resolve` en el upstream de NGINX: si un ingestor se reinicia y Docker le da otra IP, NGINX la vuelve a resolver; además NGINX puede arrancar aunque falte un ingestor.
+- Dead-letter: todo evento rechazado va a `events.invalid` con motivo, ingestor, hora y el original. Nada se descarta en silencio.
+- Productor con `acks=all` e idempotencia. Si Kafka no confirma en 5 s, el ingestor responde 503 y el cliente reintenta. Esto puede generar duplicados (el evento quedó en la cola interna y luego se entregó), por eso el correlador descarta duplicados por `eventId` (entrega al menos una vez + deduplicación).
 
 ## 7. Seguridad y privacidad
 - Tres usuarios de PostgreSQL: `admin` (solo crea la base), `app` (lectura y escritura, lo usan los servicios) y `grafana_ro` (solo SELECT). Verificado en la Fase 1: `grafana_ro` recibe `permission denied` al intentar un INSERT.
 - Las contraseñas de los usuarios se leen en `02_roles.sql` con `\getenv` de psql, así no quedan escritas en ningún archivo del repositorio.
 - PostgreSQL, Redis y el puerto externo de Kafka se publican solo en 127.0.0.1: no son accesibles desde otras máquinas de la red.
+- El ingestor revisa `data.plate` antes que cualquier otra validación y rechaza con `PLACA_EN_CLARO`. Verificado en la Fase 2.
+- Los ingestores no publican puertos: la única puerta de entrada es NGINX (8080).
 - Las contraseñas y la clave HMAC de placas se generan aleatoriamente (generador criptográfico) y viven solo en `.env`, que no se sube a git. Se entrega `.env.example` con valores de ejemplo.
 
 ## 8. Observabilidad y SLOs
 - Pendiente.
+
+## Calidad de datos (validación en el ingestor)
+- Pydantic valida campos obligatorios, tipos y catálogos (`Literal`). Reglas externas aparte: sector existente, límites del municipio, hora (no más de 5 s en el futuro ni 24 h en el pasado).
+- Motivos de rechazo legibles: `PLACA_EN_CLARO`, `ZONA_DESCONOCIDA`, `COORDENADAS_FUERA_DE_LIMITES`, `TIMESTAMP_EN_EL_FUTURO`, `TIMESTAMP_DEMASIADO_ANTIGUO`, `MENSAJE_DEMASIADO_LARGO`, `PLATE_HASH_INVALIDO`, `CAMPO_INVALIDO:<campo>`, etc.
+- Estandarización: las fechas se reescriben en un formato único (ISO 8601 con milisegundos y zona) y `data` se limpia con el modelo de su tipo (campos desconocidos se descartan).
 
 ## Otras decisiones
 - Un solo lenguaje (Python) para todos los servicios en lugar de ingestores en Java y Node como en el diagrama: pendiente de argumentar.
