@@ -1,0 +1,18 @@
+{
+  "city": "San Juan Sacatepéquez",
+  "limites": {
+    "latMin": 14.60,
+    "latMax": 14.90,
+    "lonMin": -90.75,
+    "lonMax": -90.50
+  },
+  "sectores": [
+    { "zone": "SJS-01", "zoneName": "Casco urbano",       "tipo": "comercial",    "lat": 14.71840, "lon": -90.64340, "peso": 0.20, "radio_m": 600,  "zona_escolar": true,  "limite_kmh": 40 },
+    { "zone": "SJS-02", "zoneName": "Sajcavillá",         "tipo": "mixto",        "lat": 14.70645, "lon": -90.62770, "peso": 0.14, "radio_m": 700,  "zona_escolar": false, "limite_kmh": 50 },
+    { "zone": "SJS-03", "zoneName": "Cruz Blanca",        "tipo": "residencial",  "lat": 14.73330, "lon": -90.66670, "peso": 0.20, "radio_m": 800,  "zona_escolar": true,  "limite_kmh": 50 },
+    { "zone": "SJS-04", "zoneName": "Lo de Mejía",        "tipo": "corredor",     "lat": 14.69256, "lon": -90.60027, "peso": 0.12, "radio_m": 900,  "zona_escolar": false, "limite_kmh": 60 },
+    { "zone": "SJS-05", "zoneName": "Ciudad Quetzal",     "tipo": "urbano denso", "lat": 14.70313, "lon": -90.58035, "peso": 0.20, "radio_m": 800,  "zona_escolar": true,  "limite_kmh": 50 },
+    { "zone": "SJS-06", "zoneName": "Villas del Quetzal", "tipo": "residencial",  "lat": 14.70831, "lon": -90.55144, "peso": 0.09, "radio_m": 600,  "zona_escolar": false, "limite_kmh": 40 },
+    { "zone": "SJS-07", "zoneName": "Montúfar",           "tipo": "rural",        "lat": 14.79956, "lon": -90.63965, "peso": 0.05, "radio_m": 1500, "zona_escolar": false, "limite_kmh": 60 }
+  ]
+}

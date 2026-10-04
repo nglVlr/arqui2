@@ -1,0 +1,17 @@
+# Contraseñas y claves: nunca se suben
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Resultados temporales de JMeter
+pruebas/jmeter/*.jtl
+pruebas/jmeter/reporte/
+
+# Editores y sistema
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
