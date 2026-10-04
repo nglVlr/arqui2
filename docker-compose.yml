@@ -177,6 +177,28 @@ services:
       - ingestor-2
       - ingestor-3
 
+  # -------------------------------------------------------------- Simulador
+  # No queda corriendo: tiene su propio perfil y se usa con
+  #   docker compose run --rm simulador simulador.py normal
+  #   docker compose run --rm simulador reportar.py
+  simulador:
+    build: ./simulador
+    image: monitoreo-sjs/simulador:1.0
+    profiles: ["simulador"]
+    mem_limit: 512m
+    environment:
+      INGESTA_URL: http://nginx
+      SECTORES_PATH: /config/sectores.json
+      PLATE_HMAC_KEY: ${PLATE_HMAC_KEY}
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ./config:/config:ro
+
   # ---------------------------------------------------------------- Grafana
   grafana:
     image: grafana/grafana:12.4.12

@@ -16,6 +16,7 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Dos listeners: INTERNO (kafka:9092) para los contenedores y EXTERNO (localhost:9094) solo para depurar desde Windows.
 - Factor de replicación 1: con un solo servidor no hay a dónde replicar. Es un riesgo aceptado del ADR 1 (si el disco del servidor falla se pierde el historial de Kafka).
 - Alternativas: RabbitMQ (cola clásica, borra el mensaje al consumirlo; no permite reprocesar el historial como hace Kafka con los offsets), SQS o Pub/Sub (servicios gestionados en la nube, contradicen la decisión on-premise y tienen costo mensual).
+- Clave de partición = zona: todos los eventos de un sector caen en la misma partición y llegan en orden al correlador. Costo medido en la Fase 3: las 3 particiones quedan desbalanceadas (163 / 491 / 71 mensajes tras 2 minutos de tráfico), porque solo hay 7 zonas con pesos distintos. Se acepta: con un solo correlador no importa, y el orden por sector vale más que el balance.
 - Pendiente: números medidos de rendimiento (Fase 8).
 
 ## 3. Persistencia
@@ -52,6 +53,11 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Pydantic valida campos obligatorios, tipos y catálogos (`Literal`). Reglas externas aparte: sector existente, límites del municipio, hora (no más de 5 s en el futuro ni 24 h en el pasado).
 - Motivos de rechazo legibles: `PLACA_EN_CLARO`, `ZONA_DESCONOCIDA`, `COORDENADAS_FUERA_DE_LIMITES`, `TIMESTAMP_EN_EL_FUTURO`, `TIMESTAMP_DEMASIADO_ANTIGUO`, `MENSAJE_DEMASIADO_LARGO`, `PLATE_HASH_INVALIDO`, `CAMPO_INVALIDO:<campo>`, etc.
 - Estandarización: las fechas se reescriben en un formato único (ISO 8601 con milisegundos y zona) y `data` se limpia con el modelo de su tipo (campos desconocidos se descartan).
+
+## Simulación
+- Tráfico normal medido en la Fase 3 (2 minutos): 610 eventos enviados, 597 aceptados, 13 rechazados (2.13 %, todos dañados a propósito: placa en claro, coordenadas, zona, hora futura, hash), 0 perdidos, 5.1 eventos/s.
+- `emittedAt` se pone justo antes del envío HTTP (no al generar el evento), para que la latencia medida sea la del sistema y no la espera del lote.
+- En tráfico normal las anomalías son raras a propósito (0.5 % de LPR sobre el límite, 0.5 % de lecturas con exceso, probabilidad acústica casi siempre bajo 0.7): con una ventana de 300 s, anomalías más frecuentes producirían muchas alertas R01 y R03 por puro azar.
 
 ## Otras decisiones
 - Un solo lenguaje (Python) para todos los servicios en lugar de ingestores en Java y Node como en el diagrama: pendiente de argumentar.
