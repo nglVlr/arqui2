@@ -331,7 +331,39 @@ services:
       retries: 30
       start_period: 30s
 
+  # Airflow en modo standalone: un solo contenedor con scheduler, servidor web
+  # y procesador de DAGs; metadatos en SQLite (aceptable para laboratorio).
+  # Antes de arrancar escribe el archivo de contraseñas con la del .env.
+  airflow:
+    image: apache/airflow:3.3.2-python3.12
+    profiles: ["full"]
+    restart: unless-stopped
+    mem_limit: 3g
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - 'echo "{\"admin\": \"$${AIRFLOW_ADMIN_PASSWORD}\"}" > /opt/airflow/simple_auth_manager_passwords.json.generated && exec airflow standalone'
+    environment:
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Guatemala
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      TZ: ${TZ}
+    ports:
+      - "8090:8080"
+    volumes:
+      - airflow-datos:/opt/airflow
+      - ./airflow/dags:/opt/airflow/dags:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
+  airflow-datos:
   elasticsearch-datos:
   kafka-datos:
   postgres-datos:

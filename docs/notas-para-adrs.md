@@ -26,10 +26,22 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Pendiente: alternativas (TimescaleDB, InfluxDB, NoSQL) y números de volumen.
 
 ## 4. Orquestación de tareas periódicas
-- Pendiente.
+- Decisión: Apache Airflow 3.3.2 en modo `standalone` (un contenedor con scheduler, servidor web y procesador de DAGs; metadatos en SQLite). Aceptable para laboratorio; en producción iría con PostgreSQL de metadatos y un ejecutor distribuido.
+- 3 DAGs con `psycopg2` directo, sin operadores especiales (más fácil de explicar): `retencion_datos` (diario), `reporte_diario` (diario, recalcula ayer y hoy con UPSERT, se puede correr a mano sin duplicar), `analisis_falsos_positivos` (cada hora).
+- Verificado en la Fase 7: 0 errores de importación; las 3 ejecuciones manuales terminaron en `success`; `daily_stats` y `false_positive_stats` con datos. Retención: 0 filas borradas (no hay datos con más de 30 días).
+- Costo medido: Airflow usa unos 1.33 GB de RAM sin hacer nada, el servicio más pesado junto con Elasticsearch (1.5 GB). Para 3 tareas SQL simples, un `cron` o un scheduler de Python (APScheduler) usaría unos 30 MB. Se eligió Airflow porque lo pide el enunciado y da interfaz, historial de ejecuciones, reintentos y ejecución manual desde la web.
+- La contraseña del usuario `admin` viene del `.env` (el contenedor escribe el archivo de SimpleAuthManager antes de arrancar), en lugar de la contraseña aleatoria que Airflow genera en cada arranque.
 
 ## 5. Contenerización
-- Pendiente.
+- Decisión: Docker Compose con perfiles `core` y `full` en un solo servidor. Kubernetes no aporta en un solo nodo: agrega plano de control (más memoria), manifiestos y conceptos (pods, services, ingress) sin ganar alta disponibilidad real, porque si cae la máquina cae todo igual.
+- Consumo medido en la Fase 7 (perfil full con tráfico normal, `docker stats`): 4.1 GB en total de los 20 GB de WSL2. Los más pesados: Elasticsearch 1.5 GB, Airflow 1.33 GB, Kafka 0.49 GB, Kafka UI 0.33 GB; cada servicio Python usa menos de 40 MB. Suma de los `mem_limit`: unos 12.4 GB, dentro de los 20 GB.
+- `mem_limit` en cada servicio para que uno descontrolado no tumbe a los demás; `healthcheck` + `depends_on: service_healthy` para el orden de arranque; `restart: unless-stopped` para recuperarse solos.
+- Cambiar de perfil: `docker compose --profile core down` y luego `docker compose --profile full up -d` (los volúmenes conservan los datos).
+
+## Elasticsearch
+- Elasticsearch 8.19.22 en un nodo, `-Xms1g -Xmx1g`, seguridad desactivada SOLO por ser un laboratorio en una sola máquina y con el puerto publicado solo en 127.0.0.1. En producción: TLS, usuarios y roles.
+- Al pasar al perfil full se rebobinó el consumer group `despachador` en `correlated.alerts` para indexar el histórico: 200 alertas en PostgreSQL = 200 documentos en `alertas`. No se reenviaron avisos porque el despachador revisa `dispatches` antes de avisar.
+- Hallazgo: Grafana escapa las variables para Lucene, así que `*` llegaba como `\*` y no encontraba nada. Se usa `${busqueda:raw}`.
 
 ## 6. Resiliencia
 - Pool de 3 ingestores detrás de NGINX en round robin con `max_fails=2 fail_timeout=10s` y `proxy_next_upstream` (si un ingestor no responde, NGINX reintenta la misma petición en otro).
