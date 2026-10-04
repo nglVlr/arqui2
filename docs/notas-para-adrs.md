@@ -8,7 +8,8 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Hardware real medido en la Fase 0: Intel i7-13650HX (20 hilos lógicos), 31.7 GB de RAM.
 - A WSL2 se le asignan 20 GB de RAM, 12 procesadores y 4 GB de swap (`.wslconfig`), para dejar memoria libre a Windows durante la demo.
 - Verificado con `docker info`: Docker ve 20972171264 bytes (unos 19.5 GiB) y 12 CPUs, así que la configuración de WSL2 se aplicó.
-- Pendiente: latencia extremo a extremo medida (Fase 8).
+- Latencia de extremo a extremo medida en la Fase 8 (detalle en `docs/resultados-pruebas.md`): alertas de 36 a 200 ms con tráfico normal; p95 de 976 ms a 508 eventos/s sostenidos. Máximo sostenido cumpliendo el SLO: unos 510 eventos/s. La ingestión aguanta al menos 26 500 eventos/s.
+- Bajo carga máxima el servidor usa menos de 1 núcleo de 12 y unos 4.6 GB de 20 GB: el límite es el diseño del correlador (un proceso Python), no el hardware. Un servidor único alcanza de sobra para el volumen normal del municipio (5 eventos/s, unas 100 veces menos que la capacidad medida).
 
 ## 2. Broker de eventos
 - Decisión: Apache Kafka 4.3.1 (imagen oficial `apache/kafka`) en modo KRaft, un solo broker que también es controller. Sin Zookeeper: un contenedor menos y menos memoria.
@@ -16,6 +17,7 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Dos listeners: INTERNO (kafka:9092) para los contenedores y EXTERNO (localhost:9094) solo para depurar desde Windows.
 - Factor de replicación 1: con un solo servidor no hay a dónde replicar. Es un riesgo aceptado del ADR 1 (si el disco del servidor falla se pierde el historial de Kafka).
 - Alternativas: RabbitMQ (cola clásica, borra el mensaje al consumirlo; no permite reprocesar el historial como hace Kafka con los offsets), SQS o Pub/Sub (servicios gestionados en la nube, contradicen la decisión on-premise y tienen costo mensual).
+- Escalabilidad horizontal medida en la Fase 8: 3 correladores en el mismo consumer group procesan 743 eventos/s frente a 660 con uno solo. No escala lineal porque la partición más cargada concentra el 60 % de los eventos (la clave es la zona). Es posible correr varios correladores porque todo su estado está en Redis y las operaciones que deben ser únicas (cooldown, falso positivo) son atómicas (`SET NX`, `ZREM`).
 - Clave de partición = zona: todos los eventos de un sector caen en la misma partición y llegan en orden al correlador. Costo medido en la Fase 3: las 3 particiones quedan desbalanceadas (163 / 491 / 71 mensajes tras 2 minutos de tráfico), porque solo hay 7 zonas con pesos distintos. Se acepta: con un solo correlador no importa, y el orden por sector vale más que el balance.
 - Pendiente: números medidos de rendimiento (Fase 8).
 
@@ -53,7 +55,11 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Prueba de la Fase 4 (90 s de tráfico normal, reinicio del correlador a los 35 s): 448 eventos aceptados por los ingestores = 448 en PostgreSQL, 0 alertas duplicadas. Latencia de proceso (emitido a procesado) p50 111 ms, p95 199 ms, máximo 204 ms, incluido el reinicio.
 - Apagado ordenado: el correlador atiende SIGTERM, termina el lote y cierra el consumidor (avisa a Kafka). Medido: detenido y de vuelta procesando en menos de 1 s. Sin esto, en la primera prueba Kafka tardó unos 32 s en reasignar las particiones (esperaba que venciera la sesión del consumidor muerto, 45 s por defecto). Se bajó `session.timeout.ms` a 10 s para el caso de caída abrupta (kill o falla).
 - Errores de PostgreSQL o Redis dentro del correlador: el proceso termina y Docker lo reinicia (`restart: unless-stopped`). Es más simple y seguro que reintentar a mano: retoma desde el último offset confirmado.
-- Productor con `acks=all` e idempotencia. Si Kafka no confirma en 5 s, el ingestor responde 503 y el cliente reintenta. Esto puede generar duplicados (el evento quedó en la cola interna y luego se entregó), por eso el correlador descarta duplicados por `eventId` (entrega al menos una vez + deduplicación).
+- Productor con `acks=all` e idempotencia.
+- Pruebas de resiliencia de la Fase 8 (tráfico x20): caída de un ingestor 20 s, 0 perdidos; reinicio de Redis, 0 perdidos (el cliente se reconecta y Redis recupera el estado del AOF), latencia máxima 3.2 s; correlador detenido con 15 000 eventos en cola, 0 perdidos (Kafka los guarda); Kafka caído 32 s, 0 perdidos; Kafka caído 70 s, unos 300 perdidos de 13 215 (2.3 %). En ninguna prueba hubo alertas duplicadas.
+- Pérdida aceptable: Kafka es el único punto cuya caída puede perder datos. El cliente aguanta unos 40 s por lote (5 intentos: unos 5 s de espera por intento más 1, 2, 4 y 8 s entre ellos). Para aguantar caídas más largas, el sensor debería guardar los eventos en disco y reenviarlos (store and forward).
+- Hallazgo: con Kafka caído, el ingestor responde 503, pero el mensaje queda en la cola interna del productor y se entrega cuando Kafka vuelve. El cliente lo cuenta como perdido o lo reenvía, y queda duplicado en Kafka. En la caída de 70 s llegaron a PostgreSQL 251 eventos que el simulador había contado como perdidos. La deduplicación por `eventId` evita contarlos dos veces.
+- Hallazgo: después de una carga muy alta, los cooldowns de las reglas (activados por correlaciones al azar) bloquean durante una ventana las alertas de los escenarios en esos sectores. En la evaluación inmediatamente después de una prueba x100 solo 3 de 9 escenarios generaron su alerta; repetida con los cooldowns ya vencidos, 9 de 9. Es el comportamiento diseñado (no repetir avisos), pero muestra el costo del cooldown por sector bajo mucho ruido. Si Kafka no confirma en 5 s, el ingestor responde 503 y el cliente reintenta. Esto puede generar duplicados (el evento quedó en la cola interna y luego se entregó), por eso el correlador descarta duplicados por `eventId` (entrega al menos una vez + deduplicación).
 
 ## 7. Seguridad y privacidad
 - Tres usuarios de PostgreSQL: `admin` (solo crea la base), `app` (lectura y escritura, lo usan los servicios) y `grafana_ro` (solo SELECT). Verificado en la Fase 1: `grafana_ro` recibe `permission denied` al intentar un INSERT.
@@ -82,6 +88,8 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - ESC-ROBO-01 genera además ZONA_ESCOLAR cuando se ejecuta en horario escolar: el radar de 92 km/h está en Ciudad Quetzal, que es zona escolar. Es una alerta correcta, no un falso positivo; `evaluar.py` la muestra como "adicional".
 - Interferencia observada: un escenario puede quedar bloqueado por el cooldown de una alerta igual del tráfico normal en el mismo sector (le pasó a ESC-ESCOLAR-01 en la primera corrida). Para evaluar escenarios conviene correrlos sin tráfico normal.
 - Fórmula del score documentada en `servicios/correlador/calculos.py`.
+- Optimización de la Fase 8: la primera versión leía toda la ventana del sector desde Redis con cada evento (miles de eventos bajo carga) y procesaba solo 66 eventos/s al vaciar una cola. Ahora hay una ventana por sector y tipo de evento, solo entran los eventos que alguna regla usa (no las lecturas normales de velocidad ni las entradas LPR) y se leen como máximo los 20 más recientes por tipo, en un solo viaje a Redis (pipeline): 556 eventos/s. Con un INSERT por lote en PostgreSQL: 660 eventos/s (10 veces la versión original). Los 9 escenarios siguen dando su alerta esperada.
+- Límite conocido de esa optimización: si en un sector hay más de 20 eventos de un mismo tipo en la ventana, solo se consideran los 20 más recientes. Para las reglas actuales basta, porque siempre buscan el evento más reciente que cumpla la condición.
 
 ## Integración con entidades externas (despachador)
 - Dos protocolos, como en el diagrama: Kafka (topics `external.pnc`, `external.bomberos`, `external.conred`, uno por entidad) y REST (aseguradora, `POST /siniestros`).

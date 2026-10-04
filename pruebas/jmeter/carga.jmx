@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Plan de carga de JMeter para el sistema de monitoreo San Juan Sacatepéquez.
+  Envía lotes de eventos (cámaras LPR y radares de velocidad) a POST /events/batch.
+  Parámetros (se pasan con -J, todos opcionales):
+    hilos=10         usuarios virtuales enviando a la vez
+    rampa=5          segundos para arrancar todos los hilos
+    duracion=60      segundos de prueba
+    tamano_lote=50   eventos por petición (máximo 500)
+    host=localhost   destino (dentro de la red de Docker: nginx)
+    puerto=8080      puerto (dentro de la red de Docker: 80)
+  El comando completo para ejecutarlo con Docker está en el README (sección de pruebas de carga).
+  Los eventos llevan scenarioId "JMETER" para poder distinguirlos en la base de datos.
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.5">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Carga monitoreo SJS" enabled="true">
+      <stringProp name="TestPlan.comments">Lotes de eventos a /events/batch a través de NGINX</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Sensores simulados" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(hilos,10)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampa,5)}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${__P(duracion,60)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Cabecera JSON" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /events/batch" enabled="true">
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">${cuerpo}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(puerto,8080)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <stringProp name="HTTPSampler.path">/events/batch</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">20000</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Generar lote de eventos" enabled="true">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="script">// Arma un lote de eventos con el contrato del sistema (sección 5 del plan)
+import groovy.json.JsonOutput
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+// zona, latitud, longitud, límite de velocidad
+def zonas = [[&quot;SJS-01&quot;, 14.71840, -90.64340, 40], [&quot;SJS-02&quot;, 14.70645, -90.62770, 50],
+             [&quot;SJS-03&quot;, 14.73330, -90.66670, 50], [&quot;SJS-04&quot;, 14.69256, -90.60027, 60],
+             [&quot;SJS-05&quot;, 14.70313, -90.58035, 50], [&quot;SJS-06&quot;, 14.70831, -90.55144, 40],
+             [&quot;SJS-07&quot;, 14.79956, -90.63965, 60]]
+def formato = DateTimeFormatter.ofPattern(&quot;yyyy-MM-dd&apos;T&apos;HH:mm:ss.SSSXXX&quot;)
+def r = new Random()
+def tamano = (props.getProperty(&quot;tamano_lote&quot;, &quot;50&quot;)) as int
+def eventos = []
+for (i in 0..&lt;tamano) {
+    def z = zonas[r.nextInt(zonas.size())]
+    def ahora = OffsetDateTime.now(ZoneOffset.ofHours(-6)).format(formato)
+    def esLpr = r.nextBoolean()
+    def velocidad = 10 + r.nextInt(z[3] - 10)
+    def data = esLpr ?
+        [plateHash: (1..64).collect { &quot;0123456789abcdef&quot;[r.nextInt(16)] }.join(), platePartial: &quot;P-***JMT&quot;,
+         estimatedSpeedKmh: velocidad, direction: &quot;ENTRADA&quot;, vehicle: [type: &quot;SEDAN&quot;, color: &quot;GRIS&quot;, model: &quot;COROLLA&quot;]] :
+        [speedKmh: velocidad, limitKmh: z[3], headingDegrees: r.nextInt(360), anomalyType: &quot;NINGUNA&quot;]
+    eventos &lt;&lt; [
+        schemaVersion: &quot;1.0&quot;, eventId: UUID.randomUUID().toString(),
+        eventType: esLpr ? &quot;traffic.lpr.read&quot; : &quot;traffic.speed.reading&quot;,
+        timestamp: ahora, emittedAt: ahora, scenarioId: &quot;JMETER&quot;,
+        device: [deviceId: &quot;JMT-&quot; + z[0].replace(&quot;-&quot;, &quot;&quot;) + &quot;-001&quot;, deviceType: esLpr ? &quot;lpr_camera&quot; : &quot;speed_sensor&quot;,
+                 model: &quot;JMeter&quot;, firmwareVersion: &quot;1.0&quot;],
+        location: [zone: z[0], zoneName: &quot;JMeter&quot;, city: &quot;San Juan Sacatepéquez&quot;,
+                   latitude: z[1] + (r.nextDouble() - 0.5) * 0.01, longitude: z[2] + (r.nextDouble() - 0.5) * 0.01],
+        data: data,
+        metadata: [batteryLevel: 100, signalStrength: -60, protocol: &quot;HTTP&quot;]]
+}
+vars.put(&quot;cuerpo&quot;, JsonOutput.toJson(eventos))
+</stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Respuesta HTTP 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message"></stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

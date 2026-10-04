@@ -1,7 +1,7 @@
 # Estado del correlador guardado en Redis (pasos 2, 3 y 7 del diagrama).
 # Lo usan correlador.py y reglas.py. Redis guarda:
 #   evento:{id}              eventos ya procesados (descartar duplicados)
-#   ventana:{zone}           eventos recientes del sector (sorted set, score = hora del evento)
+#   ventana:{zone}:{tipo}    eventos recientes del sector (sorted set, score = hora del evento)
 #   vehiculo:{plateHash}     último paso de un vehículo por una cámara (regla R05)
 #   panicos_pendientes       pánicos que aún no tienen confirmación (falsos positivos)
 #   usado:{tipo}:{id}        eventos ya usados en una alerta de ese tipo
@@ -34,16 +34,43 @@ def marcar_procesados(ids):
 
 
 # ------------------------------------------------------ Ventana por sector
+# Una ventana por sector y por tipo de evento. Al leer, solo se traen los
+# MAXIMO_POR_TIPO más recientes de cada tipo: con mucha carga una ventana de
+# 60 s puede tener miles de eventos, y leerlos todos con cada evento nuevo
+# hacía al correlador cada vez más lento (medido en la Fase 8: 66 eventos/s).
+TIPOS_VENTANA = ["panico", "lpr", "velocidad", "acustico", "reporte"]
+MAXIMO_POR_TIPO = 20
+
+
+def es_relevante(resumen):
+    """Solo entran a la ventana los eventos que alguna regla busca en ella.
+    Las lecturas normales de velocidad y las entradas de LPR no se necesitan
+    (R05, R06 y R07 usan el evento nuevo, el vehículo o la lista de buscados)."""
+    if resumen["tipo"] == "velocidad":
+        return resumen["d"]["anomalyType"] != "NINGUNA"
+    if resumen["tipo"] == "lpr":
+        return resumen["d"]["direction"] == "SALIDA"
+    return True
+
+
 def agregar_a_ventana(resumen):
-    clave = f"ventana:{resumen['zone']}"
-    r.zadd(clave, {json.dumps(resumen): resumen["ts"]})
+    if not es_relevante(resumen):
+        return
+    clave = f"ventana:{resumen['zone']}:{resumen['tipo']}"
+    tuberia = r.pipeline()   # pipeline: varias órdenes en un solo viaje a Redis
+    tuberia.zadd(clave, {json.dumps(resumen): resumen["ts"]})
     # Se recorta lo que ya salió de la ventana (según la hora del evento, no del reloj)
-    r.zremrangebyscore(clave, "-inf", resumen["ts"] - VENTANA)
+    tuberia.zremrangebyscore(clave, "-inf", resumen["ts"] - VENTANA)
+    tuberia.expire(clave, 2 * VENTANA)   # si el sector deja de recibir eventos, la clave se borra sola
+    tuberia.execute()
 
 
 def eventos_en_ventana(zona, ts):
-    miembros = r.zrangebyscore(f"ventana:{zona}", ts - VENTANA, "+inf")
-    return [json.loads(m) for m in miembros]
+    tuberia = r.pipeline()
+    for tipo in TIPOS_VENTANA:
+        # Los más recientes primero, solo dentro de la ventana
+        tuberia.zrevrangebyscore(f"ventana:{zona}:{tipo}", "+inf", ts - VENTANA, start=0, num=MAXIMO_POR_TIPO)
+    return [json.loads(m) for miembros in tuberia.execute() for m in miembros]
 
 
 # ------------------------------------------------- Eventos usados y cooldown

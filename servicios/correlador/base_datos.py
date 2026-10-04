@@ -8,6 +8,7 @@ import json
 import os
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 conexion = psycopg2.connect(
     host=os.getenv("POSTGRES_HOST", "postgres"),
@@ -18,19 +19,32 @@ conexion = psycopg2.connect(
 cursor = conexion.cursor()
 
 
+# Los eventos se juntan aquí y se insertan todos juntos en confirmar():
+# un solo INSERT por lote es mucho más rápido que uno por evento.
+pendientes = []
+
+
 def guardar_evento(e):
-    # ON CONFLICT: si el evento ya estaba (reproceso tras una caída), no se duplica
-    cursor.execute(
-        """INSERT INTO events (event_id, event_type, zone, device_id, device_type, latitude, longitude,
-                               occurred_at, emitted_at, ingested_at, processed_at, ingestor_id,
-                               scenario_id, data, metadata)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s, %s, %s, %s)
-           ON CONFLICT (event_id) DO NOTHING""",
+    pendientes.append(
         (e["eventId"], e["eventType"], e["location"]["zone"], e["device"]["deviceId"],
          e["device"]["deviceType"], e["location"]["latitude"], e["location"]["longitude"],
          e["timestamp"], e["emittedAt"], e["ingestion"]["ingestedAt"], e["ingestion"]["ingestorId"],
-         e.get("scenarioId"), json.dumps(e["data"]), json.dumps(e.get("metadata"))),
+         e.get("scenarioId"), json.dumps(e["data"]), json.dumps(e.get("metadata"))))
+
+
+def insertar_eventos_pendientes():
+    if not pendientes:
+        return
+    # ON CONFLICT: si el evento ya estaba (reproceso tras una caída), no se duplica
+    execute_values(
+        cursor,
+        """INSERT INTO events (event_id, event_type, zone, device_id, device_type, latitude, longitude,
+                               occurred_at, emitted_at, ingested_at, ingestor_id,
+                               scenario_id, data, metadata)
+           VALUES %s ON CONFLICT (event_id) DO NOTHING""",
+        pendientes,
     )
+    pendientes.clear()
 
 
 def guardar_alerta(a):
@@ -52,4 +66,5 @@ def guardar_violacion_slo(alert_id, latencia_ms, umbral_ms):
 
 
 def confirmar():
+    insertar_eventos_pendientes()
     conexion.commit()
