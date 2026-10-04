@@ -68,6 +68,14 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Interferencia observada: un escenario puede quedar bloqueado por el cooldown de una alerta igual del tráfico normal en el mismo sector (le pasó a ESC-ESCOLAR-01 en la primera corrida). Para evaluar escenarios conviene correrlos sin tráfico normal.
 - Fórmula del score documentada en `servicios/correlador/calculos.py`.
 
+## Integración con entidades externas (despachador)
+- Dos protocolos, como en el diagrama: Kafka (topics `external.pnc`, `external.bomberos`, `external.conred`, uno por entidad) y REST (aseguradora, `POST /siniestros`).
+- Cada envío queda en la tabla `dispatches` (destino, protocolo, resultado). `PANICO_NO_CONFIRMADO` se registra con destino `ninguno`.
+- Verificado en la Fase 5: 185 alertas, 185 despachadas; offsets de los topics externos iguales a los conteos de `dispatches` (PNC 42, Bomberos 9, CONRED 5); la aseguradora devolvió números de caso.
+- Idempotencia: antes de despachar se revisa si la alerta ya tiene envíos (reproceso tras una caída). Elasticsearch usa el `alertId` como id del documento, así que reindexar sobrescribe en lugar de duplicar.
+- Si la aseguradora no responde, se registra `ERROR` en `dispatches` y se sigue con las demás alertas (no se bloquea el aviso a la PNC por una aseguradora caída).
+- Perfiles: `despachador` (core, sin Elasticsearch) y `despachador-es` (full, con Elasticsearch) son el mismo código con distinta variable de entorno. Compose no permite cambiar variables según el perfil, por eso son dos definiciones del servicio. Hay que usar un perfil a la vez.
+
 ## Calidad de datos (validación en el ingestor)
 - Pydantic valida campos obligatorios, tipos y catálogos (`Literal`). Reglas externas aparte: sector existente, límites del municipio, hora (no más de 5 s en el futuro ni 24 h en el pasado).
 - Motivos de rechazo legibles: `PLACA_EN_CLARO`, `ZONA_DESCONOCIDA`, `COORDENADAS_FUERA_DE_LIMITES`, `TIMESTAMP_EN_EL_FUTURO`, `TIMESTAMP_DEMASIADO_ANTIGUO`, `MENSAJE_DEMASIADO_LARGO`, `PLATE_HASH_INVALIDO`, `CAMPO_INVALIDO:<campo>`, etc.

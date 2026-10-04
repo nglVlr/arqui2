@@ -209,6 +209,57 @@ services:
       redis:
         condition: service_healthy
 
+  # ----------------------------------------------- Despachador y aseguradora
+  # Perfil core: sin Elasticsearch. En el perfil full corre despachador-es
+  # (mismo código y mismo consumer group, pero indexa en Elasticsearch).
+  despachador: &despachador
+    build: ./servicios/despachador
+    image: monitoreo-sjs/despachador:1.0
+    profiles: ["core"]
+    restart: unless-stopped
+    mem_limit: 256m
+    environment: &despachador-entorno
+      KAFKA_BOOTSTRAP: kafka:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      ASEGURADORA_URL: http://aseguradora-mock:8000
+      TZ: ${TZ}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      aseguradora-mock:
+        condition: service_started
+
+  despachador-es:
+    <<: *despachador
+    profiles: ["full"]
+    environment:
+      <<: *despachador-entorno
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      aseguradora-mock:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+
+  # Entidad externa simulada que recibe accidentes por REST (sin puertos al host)
+  aseguradora-mock:
+    build: ./servicios/aseguradora_mock
+    image: monitoreo-sjs/aseguradora-mock:1.0
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      TZ: ${TZ}
+
   # -------------------------------------------------------------- Simulador
   # No queda corriendo: tiene su propio perfil y se usa con
   #   docker compose run --rm simulador simulador.py normal
@@ -256,7 +307,32 @@ services:
       postgres:
         condition: service_healthy
 
+  # ---------------------------------------------------------- Perfil full
+  # Búsqueda histórica de alertas. Seguridad desactivada SOLO por ser un
+  # laboratorio en una sola máquina (puerto publicado solo en 127.0.0.1).
+  elasticsearch:
+    image: elasticsearch:8.19.22
+    profiles: ["full"]
+    restart: unless-stopped
+    mem_limit: 2g
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      TZ: ${TZ}
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch-datos:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
 volumes:
+  elasticsearch-datos:
   kafka-datos:
   postgres-datos:
   redis-datos:
