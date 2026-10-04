@@ -1,0 +1,156 @@
+# Sistema de monitoreo urbano San Juan Sacatepéquez.
+# Perfiles:
+#   core: lo necesario para desarrollar y probar el flujo completo de eventos.
+#   full: todo lo de core más Elasticsearch y Airflow (pruebas finales y demo).
+# Arranque:  docker compose --profile core up -d   (o --profile full)
+# Los simuladores se ejecutan aparte con: docker compose run --rm simulador ...
+
+name: monitoreo-sjs
+
+services:
+
+  # ---------------------------------------------------------------- Kafka
+  # Un solo broker en modo KRaft (sin Zookeeper). Hace de broker y de controller.
+  kafka:
+    image: apache/kafka:4.3.1
+    profiles: ["core", "full"]
+    hostname: kafka
+    restart: unless-stopped
+    mem_limit: 1536m
+    environment:
+      # Identificador del clúster KRaft: 16 bytes en base64 (22 caracteres)
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # INTERNO (9092) para los contenedores, EXTERNO (9094) solo para depurar desde Windows
+      KAFKA_LISTENERS: INTERNO://:9092,CONTROLLER://:9093,EXTERNO://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNO://kafka:9092,EXTERNO://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNO:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNO:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNO
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Con un solo broker todo se replica una sola vez
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Los topics solo los crea kafka-init (evita topics creados por error de dedo)
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1g"
+    ports:
+      - "127.0.0.1:9094:9094"
+    volumes:
+      - kafka-datos:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # Crea los topics y termina (no se reinicia)
+  kafka-init:
+    image: apache/kafka:4.3.1
+    profiles: ["core", "full"]
+    restart: "no"
+    mem_limit: 512m
+    entrypoint: ["/bin/bash", "/scripts/crear-topics.sh"]
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256m"
+    volumes:
+      - ./infra/kafka/crear-topics.sh:/scripts/crear-topics.sh:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # Interfaz web para ver topics y mensajes durante la demo
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      KAFKA_CLUSTERS_0_NAME: monitoreo-sjs
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8085:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ------------------------------------------------------------- PostgreSQL
+  postgres:
+    image: postgres:16.15
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      TZ: ${TZ}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Las usa 02_roles.sql para crear los usuarios de la app y de Grafana
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      GRAFANA_RO_PASSWORD: ${GRAFANA_RO_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-datos:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ------------------------------------------------------------------ Redis
+  # Estado del correlador. appendonly = persistencia AOF (sobrevive reinicios).
+  redis:
+    image: redis:7.4.11
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-datos:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ---------------------------------------------------------------- Grafana
+  grafana:
+    image: grafana/grafana:12.4.12
+    profiles: ["core", "full"]
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      TZ: ${TZ}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 5s
+      # Las usa el aprovisionamiento del datasource
+      POSTGRES_DB: ${POSTGRES_DB}
+      GRAFANA_RO_PASSWORD: ${GRAFANA_RO_PASSWORD}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-datos:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  kafka-datos:
+  postgres-datos:
+  redis-datos:
+  grafana-datos:
