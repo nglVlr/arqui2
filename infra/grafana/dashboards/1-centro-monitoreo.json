@@ -1,0 +1,190 @@
+{
+  "uid": "centro-monitoreo",
+  "title": "1. Centro de Monitoreo San Juan Sacatepéquez",
+  "description": "Mapa de calor de eventos, alertas activas y contadores para el operador.",
+  "tags": ["monitoreo", "sjs"],
+  "timezone": "America/Guatemala",
+  "refresh": "5s",
+  "time": { "from": "now-1h", "to": "now" },
+  "schemaVersion": 41,
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Eventos (última hora)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"Eventos\" FROM events WHERE occurred_at > now() - interval '1 hour'" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Alertas críticas (última hora)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"Críticas\" FROM alerts WHERE severity = 'CRITICA' AND created_at > now() - interval '1 hour'" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },
+        "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Alertas confirmadas (última hora)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"Alertas\" FROM alerts WHERE status = 'NUEVA' AND created_at > now() - interval '1 hour'" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Falsos positivos probables (última hora)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"Falsos positivos\" FROM alerts WHERE status = 'FALSO_POSITIVO_PROBABLE' AND created_at > now() - interval '1 hour'" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "geomap",
+      "title": "Mapa de calor de eventos (últimos 15 minutos)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 13 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT latitude, longitude, event_type FROM events WHERE occurred_at > now() - interval '15 minutes'" }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "view": { "id": "coords", "lat": 14.735, "lon": -90.61, "zoom": 12 },
+        "controls": { "showZoom": true, "mouseWheelZoom": true, "showAttribution": true },
+        "basemap": { "type": "osm-standard", "name": "OpenStreetMap", "config": {} },
+        "layers": [
+          { "type": "heatmap", "name": "Eventos",
+            "location": { "mode": "coords", "latitude": "latitude", "longitude": "longitude" },
+            "config": { "blur": 15, "radius": 6, "weight": { "fixed": 0.15, "min": 0, "max": 1 } } }
+        ],
+        "tooltip": { "mode": "details" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "geomap",
+      "title": "Alertas de la última hora (rojo = CRÍTICA, naranja = ALTA, amarillo = MEDIA, azul = BAJA)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 13 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT a.latitude, a.longitude, a.alert_type AS tipo, a.severity AS severidad, z.zone_name AS sector, a.description AS descripcion, CASE a.severity WHEN 'CRITICA' THEN 4 WHEN 'ALTA' THEN 3 WHEN 'MEDIA' THEN 2 ELSE 1 END AS nivel FROM alerts a JOIN zones z ON z.zone = a.zone WHERE a.created_at > now() - interval '1 hour' ORDER BY nivel" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue", "value": null }, { "color": "yellow", "value": 2 },
+            { "color": "orange", "value": 3 }, { "color": "red", "value": 4 } ] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": { "id": "coords", "lat": 14.735, "lon": -90.61, "zoom": 12 },
+        "controls": { "showZoom": true, "mouseWheelZoom": true, "showAttribution": true },
+        "basemap": { "type": "osm-standard", "name": "OpenStreetMap", "config": {} },
+        "layers": [
+          { "type": "markers", "name": "Alertas", "tooltip": true,
+            "location": { "mode": "coords", "latitude": "latitude", "longitude": "longitude" },
+            "config": { "showLegend": true, "style": {
+              "size": { "fixed": 10, "min": 6, "max": 16, "field": "nivel" },
+              "color": { "field": "nivel", "fixed": "red" },
+              "opacity": 0.8,
+              "symbol": { "mode": "fixed", "fixed": "img/icons/marker/circle.svg" } } } }
+        ],
+        "tooltip": { "mode": "details" }
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Alertas recientes",
+      "gridPos": { "x": 0, "y": 17, "w": 24, "h": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT a.created_at AS \"Hora\", a.alert_type AS \"Tipo\", z.zone_name AS \"Sector\", a.severity AS \"Severidad\", a.status AS \"Estado\", a.description AS \"Descripción\", a.score AS \"Score\", a.latency_ms AS \"Latencia (ms)\" FROM alerts a JOIN zones z ON z.zone = a.zone WHERE $__timeFilter(a.created_at) ORDER BY a.created_at DESC LIMIT 100" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Severidad" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "custom.width", "value": 110 },
+              { "id": "mappings", "value": [ { "type": "value", "options": {
+                "CRITICA": { "color": "red", "index": 0 }, "ALTA": { "color": "orange", "index": 1 },
+                "MEDIA": { "color": "yellow", "index": 2 }, "BAJA": { "color": "blue", "index": 3 } } } ] } ] },
+          { "matcher": { "id": "byName", "options": "Hora" },
+            "properties": [ { "id": "unit", "value": "dateTimeAsLocal" }, { "id": "custom.width", "value": 175 } ] },
+          { "matcher": { "id": "byName", "options": "Descripción" },
+            "properties": [ { "id": "custom.width", "value": 400 } ] },
+          { "matcher": { "id": "byName", "options": "Tipo" },
+            "properties": [ { "id": "custom.width", "value": 215 } ] },
+          { "matcher": { "id": "byName", "options": "Estado" },
+            "properties": [ { "id": "custom.width", "value": 200 } ] }
+        ]
+      },
+      "options": { "showHeader": true, "cellHeight": "sm", "footer": { "show": false } }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Alertas por tipo",
+      "gridPos": { "x": 0, "y": 27, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT alert_type AS \"Tipo\", count(*) AS \"Alertas\" FROM alerts WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "xField": "Tipo", "showValue": "always",
+                   "legend": { "showLegend": false, "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Alertas por sector",
+      "gridPos": { "x": 12, "y": 27, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT z.zone_name AS \"Sector\", count(a.alert_id) AS \"Alertas\" FROM zones z LEFT JOIN alerts a ON a.zone = z.zone AND $__timeFilter(a.created_at) GROUP BY z.zone, z.zone_name ORDER BY z.zone" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "xField": "Sector", "showValue": "always",
+                   "legend": { "showLegend": false, "displayMode": "list", "placement": "bottom" } }
+    }
+  ]
+}

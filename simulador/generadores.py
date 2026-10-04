@@ -109,8 +109,8 @@ def evento_lpr(zona, placa=None, velocidad=None, direccion=None, escenario=None,
     placa = placa or placa_aleatoria()
     limite = SECTORES[zona]["limite_kmh"]
     if velocidad is None:
-        # En tráfico normal casi nadie pasa del límite (0.5 %), para no generar alertas por azar
-        velocidad = random.randint(limite + 5, limite + 30) if random.random() < 0.005 else random.randint(15, limite)
+        # En tráfico normal casi nadie pasa del límite (0.2 %), para no generar alertas por azar
+        velocidad = random.randint(limite + 5, limite + 30) if random.random() < 0.002 else random.randint(15, limite)
     tipo, modelo = random.choice(VEHICULOS)
     data = {
         "plateHash": hash_placa(placa),
@@ -125,7 +125,7 @@ def evento_lpr(zona, placa=None, velocidad=None, direccion=None, escenario=None,
 def evento_velocidad(zona, velocidad=None, anomalia=None, escenario=None, centro=False):
     limite = SECTORES[zona]["limite_kmh"]
     if anomalia is None:
-        anomalia = random.choices(["NINGUNA", "EXCESO_VELOCIDAD", "TRAYECTORIA_ANOMALA"], weights=[993, 5, 2])[0]
+        anomalia = random.choices(["NINGUNA", "EXCESO_VELOCIDAD", "TRAYECTORIA_ANOMALA"], weights=[997, 2, 1])[0]   # anomalías raras: 0.2 % y 0.1 %
     if velocidad is None:
         velocidad = random.randint(limite + 10, limite + 50) if anomalia == "EXCESO_VELOCIDAD" else random.randint(10, limite)
     data = {"speedKmh": velocidad, "limitKmh": limite, "headingDegrees": random.randint(0, 359), "anomalyType": anomalia}

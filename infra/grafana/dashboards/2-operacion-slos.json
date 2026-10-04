@@ -1,0 +1,197 @@
+{
+  "uid": "operacion-slos",
+  "title": "2. Operación y SLOs",
+  "description": "Rendimiento del sistema: ingesta, latencia de alertas, calidad de datos, balanceo y envíos externos.",
+  "tags": ["monitoreo", "sjs", "slo"],
+  "timezone": "America/Guatemala",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 41,
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Latencia p95 de alertas (SLO < 2000 ms)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS \"p95\" FROM alerts WHERE status = 'NUEVA' AND $__timeFilter(created_at)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0, "color": { "mode": "thresholds" },
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 2000 } ] } },
+        "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Eventos inválidos (SLO < 2 %)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "WITH inv AS (SELECT count(*) AS n FROM invalid_events WHERE $__timeFilter(received_at)), val AS (SELECT count(*) AS n FROM events WHERE $__timeFilter(ingested_at)) SELECT 100.0 * inv.n / NULLIF(inv.n + val.n, 0) AS \"Inválidos\" FROM inv, val" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 2, "color": { "mode": "thresholds" },
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 2 } ] } },
+        "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Violaciones de SLO en el periodo",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) AS \"Violaciones\" FROM slo_violations WHERE $__timeFilter(detectado_at)" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },
+        "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Eventos por segundo (último minuto)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT count(*) / 60.0 AS \"eventos/s\" FROM events WHERE ingested_at > now() - interval '1 minute'" }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 1, "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value",
+                   "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Eventos por segundo ingeridos",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(ingested_at, '10s'), count(*) / 10.0 AS \"eventos/s\" FROM events WHERE $__timeFilter(ingested_at) GROUP BY 1 ORDER BY 1" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "insertNulls": 30000 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Latencia de alertas p50 y p95 (umbral 2000 ms)",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1m'), percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS \"p50\", percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS \"p95\" FROM alerts WHERE status = 'NUEVA' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 6, "showPoints": "always", "insertNulls": 180000,
+                      "thresholdsStyle": { "mode": "line+area" } },
+          "color": { "mode": "palette-classic" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 2000 } ] } },
+        "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Eventos por ingestor (balanceo de NGINX)",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(ingested_at, '30s'), ingestor_id AS metric, count(*) AS value FROM events WHERE $__timeFilter(ingested_at) GROUP BY 1, 2 ORDER BY 1" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal", "group": "A" } } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Porcentaje de eventos inválidos por minuto (umbral 2 %)",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+          "rawSql": "WITH v AS (SELECT $__timeGroup(ingested_at, '1m') AS t, count(*) AS n FROM events WHERE $__timeFilter(ingested_at) GROUP BY 1), i AS (SELECT $__timeGroup(received_at, '1m') AS t, count(*) AS n FROM invalid_events WHERE $__timeFilter(received_at) GROUP BY 1) SELECT v.t AS time, 100.0 * coalesce(i.n, 0) / (v.n + coalesce(i.n, 0)) AS \"% inválidos\" FROM v LEFT JOIN i ON i.t = v.t ORDER BY 1" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "insertNulls": 180000, "thresholdsStyle": { "mode": "line+area" } },
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 2 } ] } },
+        "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Violaciones de SLO recientes",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT s.detectado_at AS \"Hora\", a.alert_type AS \"Tipo\", z.zone_name AS \"Sector\", s.latency_ms AS \"Latencia (ms)\", s.umbral_ms AS \"Umbral (ms)\" FROM slo_violations s JOIN alerts a ON a.alert_id = s.alert_id JOIN zones z ON z.zone = a.zone WHERE $__timeFilter(s.detectado_at) ORDER BY s.detectado_at DESC LIMIT 50" }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [
+        { "matcher": { "id": "byName", "options": "Latencia (ms)" },
+          "properties": [ { "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] },
+        { "matcher": { "id": "byName", "options": "Hora" }, "properties": [ { "id": "unit", "value": "dateTimeAsLocal" } ] } ] },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Envíos a entidades externas por destino",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 9 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT destino || ' (' || protocolo || ')' AS \"Destino\", count(*) FILTER (WHERE resultado LIKE 'OK%') AS \"Exitosos\", count(*) FILTER (WHERE resultado LIKE 'ERROR%') AS \"Fallidos\" FROM dispatches WHERE destino <> 'ninguno' AND $__timeFilter(enviado_at) GROUP BY destino, protocolo ORDER BY 2 DESC" }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [
+        { "matcher": { "id": "byName", "options": "Exitosos" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] },
+        { "matcher": { "id": "byName", "options": "Fallidos" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] } ] },
+      "options": { "orientation": "horizontal", "xField": "Destino", "showValue": "always", "stacking": "normal",
+                   "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Motivos de rechazo (dead-letter events.invalid)",
+      "gridPos": { "x": 0, "y": 30, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT reason AS \"Motivo\", count(*) AS \"Eventos\" FROM invalid_events WHERE $__timeFilter(received_at) GROUP BY 1 ORDER BY 2 DESC" }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Latencia de procesamiento de eventos (emitido a procesado) p95",
+      "gridPos": { "x": 12, "y": 30, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres-sjs" },
+      "targets": [
+        { "refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(processed_at, '30s'), percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM processed_at - emitted_at) * 1000) AS \"p95 ms\" FROM events WHERE $__timeFilter(processed_at) GROUP BY 1 ORDER BY 1" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "insertNulls": 90000 } }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}

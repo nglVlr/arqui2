@@ -56,6 +56,9 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Medido en la Fase 4 (escenarios con velocidad 4): latencias de 36 a 194 ms en las 7 reglas en tiempo real.
 - Hallazgo: con `consume(timeout=1.0)` el correlador esperaba hasta 1 s para juntar un lote cuando hay poco tráfico, y la latencia rondaba los 800 ms. Con `timeout=0.2` bajó a unos 100 a 200 ms.
 - Al procesar un atraso (por ejemplo tras una caída) las alertas salen con latencias altas y quedan registradas como violaciones de SLO. Es lo correcto: el SLO mide lo que vivió el operador.
+- Grafana 12.4 con datasources y dashboards aprovisionados como archivos (versionados en git, se recrean idénticos en cualquier máquina). Usuario `grafana_ro`. Dashboard 1 (operador: mapas, tabla, contadores) y dashboard 2 (SLOs, balanceo, calidad de datos, envíos externos).
+- Mapa base OpenStreetMap: lo descarga el navegador de quien mira el dashboard (requiere internet en esa máquina, no en el servidor). Riesgo para la demo: sin internet los mapas muestran los puntos sin calles de fondo.
+- Hallazgo: Grafana no detectó cambios en los JSON de dashboards montados desde Windows (el sondeo de cambios no ve la modificación a través del montaje de Docker Desktop). Tras editar un dashboard hay que ejecutar `docker compose restart grafana`.
 - Los falsos positivos (`PANICO_NO_CONFIRMADO`) no cuentan para el SLO: por definición esperan la ventana completa. Su `latencyMs` se mide desde el cierre de la ventana (hasta unos 10 s, porque la revisión es cada 10 s).
 
 ## Reglas de correlación
@@ -84,7 +87,8 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 ## Simulación
 - Tráfico normal medido en la Fase 3 (2 minutos): 610 eventos enviados, 597 aceptados, 13 rechazados (2.13 %, todos dañados a propósito: placa en claro, coordenadas, zona, hora futura, hash), 0 perdidos, 5.1 eventos/s.
 - `emittedAt` se pone justo antes del envío HTTP (no al generar el evento), para que la latencia medida sea la del sistema y no la espera del lote.
-- En tráfico normal las anomalías son raras a propósito (0.5 % de LPR sobre el límite, 0.5 % de lecturas con exceso, probabilidad acústica casi siempre bajo 0.7): con una ventana de 300 s, anomalías más frecuentes producirían muchas alertas R01 y R03 por puro azar.
+- En tráfico normal las anomalías son raras a propósito (0.2 % de LPR sobre el límite, 0.2 % de lecturas con exceso, 0.1 % de trayectoria anómala, probabilidad acústica casi siempre bajo 0.7).
+- Hallazgo de la Fase 6: con 0.5 % de excesos aparecieron 2 ROBO_EN_CURSO y 2 ACCIDENTE_VIAL por azar en un minuto (con doble tráfico). La regla R01 tal como está definida (pánico + cualquier LPR saliendo + cualquier anomalía de velocidad en el sector) es muy sensible: en tráfico normal siempre hay algún LPR saliendo, así que en la práctica basta pánico + exceso. Se mantuvo la regla del plan y se bajaron las anomalías del tráfico normal. Tema para el ADR: a mayor ventana de correlación, más correlaciones por azar (la ventana de 300 s es 5 veces más propensa que la de 60 s). Una mejora futura sería exigir que la anomalía sea del mismo vehículo (misma placa).
 
 ## Otras decisiones
 - Un solo lenguaje (Python) para todos los servicios en lugar de ingestores en Java y Node como en el diagrama: pendiente de argumentar.

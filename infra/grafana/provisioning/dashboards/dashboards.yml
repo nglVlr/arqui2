@@ -1,0 +1,14 @@
+# Le dice a Grafana que cargue los dashboards JSON de infra/grafana/dashboards
+# (montada en /var/lib/grafana/dashboards). Si se edita un JSON, Grafana lo
+# recarga solo en unos segundos.
+apiVersion: 1
+
+providers:
+  - name: monitoreo-sjs
+    folder: Monitoreo SJS
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
