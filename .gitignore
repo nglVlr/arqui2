@@ -21,3 +21,6 @@ pruebas/jmeter/*.log
 
 # Capturas de Grafana generadas por pruebas/grafana/captura.js
 pruebas/grafana/*.png
+
+# Archivos temporales de Word (se crean mientras un documento está abierto)
+~$*
