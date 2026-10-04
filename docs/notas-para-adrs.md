@@ -7,6 +7,7 @@ No es el documento final de ADRs; es la materia prima para escribirlos.
 - Decisión: on-premise en un solo servidor (laptop con Windows 11 + Docker Desktop sobre WSL2).
 - Hardware real medido en la Fase 0: Intel i7-13650HX (20 hilos lógicos), 31.7 GB de RAM.
 - A WSL2 se le asignan 20 GB de RAM, 12 procesadores y 4 GB de swap (`.wslconfig`), para dejar memoria libre a Windows durante la demo.
+- Verificado con `docker info`: Docker ve 20972171264 bytes (unos 19.5 GiB) y 12 CPUs, así que la configuración de WSL2 se aplicó.
 - Pendiente: latencia extremo a extremo medida (Fase 8).
 
 ## 2. Broker de eventos
