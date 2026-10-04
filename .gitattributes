@@ -1,3 +1,7 @@
-# Los scripts .sh se ejecutan dentro de contenedores Linux:
-# deben tener finales de línea LF aunque se editen en Windows.
+# Casi todos los archivos se usan dentro de contenedores Linux
+# (scripts, configuración de NGINX, SQL, Python): siempre finales de línea LF,
+# aunque se clonen y editen en Windows.
+* text=auto eol=lf
+
+# Los scripts .sh fallan en Linux si tienen CRLF: se deja explícito
 *.sh text eol=lf
