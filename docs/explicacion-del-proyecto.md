@@ -364,6 +364,7 @@ Los dashboards están guardados como archivos JSON en `infra/grafana/dashboards/
 1. **Centro de Monitoreo San Juan Sacatepéquez** (para el operador): contadores de eventos, alertas críticas y falsos positivos de la última hora; mapa de calor de los eventos de los últimos 15 minutos sobre el mapa real del municipio; mapa de alertas coloreadas por severidad; tabla de alertas recientes con las críticas en rojo; barras por tipo y por sector.
 2. **Operación y SLOs** (para el técnico): eventos por segundo, latencia p50 y p95 con la línea roja en 2000 ms, porcentaje de inválidos con la línea en 2 %, eventos por ingestor (demuestra el balanceo de NGINX), violaciones de SLO y envíos por entidad.
 3. **Histórico** (perfil `full`): búsqueda de alertas en Elasticsearch (por ejemplo `alertType:ROBO_EN_CURSO`), estadísticas diarias y falsos positivos por sector calculados por Airflow.
+4. **Bandeja de instituciones**: una tabla para cada institución (PNC, Bomberos, CONRED y aseguradora) con las alertas que se le enviaron, las más recientes primero. Sale de la tabla `dispatches` y sirve para validar el enrutamiento del despachador: por ejemplo, CONRED solo debe recibir INCENDIO_CONFIRMADO.
 
 ---
 

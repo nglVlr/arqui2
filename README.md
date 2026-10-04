@@ -110,6 +110,7 @@ Dashboards en Grafana (carpeta "Monitoreo SJS"):
 1. **Centro de Monitoreo San Juan Sacatepéquez**: mapa de calor, alertas en el mapa, tabla de alertas y contadores.
 2. **Operación y SLOs**: eventos por segundo, latencia p50 y p95, inválidos, balanceo por ingestor, violaciones de SLO y envíos externos.
 3. **Histórico** (perfil full): búsqueda en Elasticsearch y estadísticas de Airflow.
+4. **Bandeja de instituciones**: una tabla por institución (PNC, Bomberos, CONRED y aseguradora) con las alertas que recibió cada una, las más recientes primero (tabla `dispatches`). Clic en una celda para ver la descripción completa.
 
 ## Scripts del simulador
 
