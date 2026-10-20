@@ -4,6 +4,7 @@
 # inválidos en events.invalid (dead-letter).
 # Endpoints: POST /events, POST /events/batch, GET /health.
 
+import copy
 import logging
 import os
 import time
@@ -37,6 +38,16 @@ def registrar_resumen(aceptados, rechazados):
         contadores.update(aceptados=0, rechazados=0, ultimo_log=time.time())
 
 
+def redactar_placa(evento):
+    """Copia del evento con data.plate reemplazada por "REDACTADA".
+    Privacidad: ni los eventos rechazados deben guardar la placa real, porque
+    la dead-letter termina en Kafka (events.invalid) y en PostgreSQL
+    (invalid_events). Se trabaja sobre una copia para no tocar el evento recibido."""
+    copia = copy.deepcopy(evento)
+    copia["data"]["plate"] = "REDACTADA"
+    return copia
+
+
 def procesar(eventos):
     """Valida una lista de eventos, los publica en Kafka y arma la respuesta HTTP."""
     ahora = fecha_iso(datetime.now(timezone.utc).astimezone())
@@ -52,7 +63,8 @@ def procesar(eventos):
             zona = "sin-zona"
             if isinstance(evento, dict) and isinstance(evento.get("location"), dict):
                 zona = str(evento["location"].get("zone") or "sin-zona")
-            invalido = {"reason": motivo, "ingestorId": INGESTOR_ID, "receivedAt": ahora, "original": evento}
+            original = redactar_placa(evento) if motivo == "PLACA_EN_CLARO" else evento
+            invalido = {"reason": motivo, "ingestorId": INGESTOR_ID, "receivedAt": ahora, "original": original}
             mensajes.append((TOPIC_INVALIDOS, zona, invalido))
             motivos.append(motivo)
 
