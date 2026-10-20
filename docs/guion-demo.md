@@ -66,12 +66,18 @@ docker compose logs aseguradora-mock --tail 5
 ```
 - En **Kafka UI**: `external.pnc`, `external.bomberos` y `external.conred` con las alertas enrutadas.
 - La aseguradora recibió el accidente por REST y respondió con un número de caso.
+- En el **dashboard 5** (Despacho y falsos positivos): la tabla "A quién se envía cada tipo de alerta" muestra la regla del despachador junto a los envíos reales, que deben coincidir. En la lista de envíos, filtrar por institución con el embudo del encabezado "Institución".
 
 Esperar unos 70 s después del último escenario (para que se cierren los falsos positivos) y evaluar:
 ```powershell
 docker compose run --rm simulador evaluar.py --minutos 5
 ```
 Mostrar la tabla: 9 de 9 aciertos con su latencia. Explicar la columna "Adicionales": por ejemplo, ESC-ROBO-01 también genera ZONA_ESCOLAR porque el radar marcó 92 km/h en una zona escolar en horario escolar. Es una alerta correcta, no un error.
+
+Luego, en la parte de abajo del **dashboard 5**, explicar cómo un pánico pasa a alerta real (el texto de la izquierda lo resume):
+- "Pánicos que pasaron a alerta real": los pánicos de ESC-ROBO-01, ESC-ARMADO-01 y ESC-INCENDIO-01, con el evento que los confirmó, la regla y a quién se avisó.
+- "Falsos positivos reales": ESC-FALSO-01 ("ninguno": ningún otro sensor reportó algo) y ESC-RUIDO-01 (hubo un vidrio roto con probabilidad 0.4, que no alcanza el mínimo de 0.7). No se avisó a ninguna institución.
+- "Falsos positivos corregidos": pánicos que se marcaron como falsos porque el correlador iba atrasado y que después se confirmaron. No cuentan como falsos.
 
 ## 4. Reporte ciudadano manual (2 min)
 

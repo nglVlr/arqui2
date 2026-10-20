@@ -1,0 +1,1148 @@
+{
+  "uid": "despacho-falsos-positivos",
+  "title": "5. Despacho y falsos positivos",
+  "description": "Qué alertas se envían a la PNC, Bomberos, CONRED y la aseguradora, qué pánicos terminan como falso positivo real y cómo un pánico pasa a ser alerta real.",
+  "tags": [
+    "monitoreo",
+    "sjs",
+    "instituciones",
+    "falsos-positivos"
+  ],
+  "timezone": "America/Guatemala",
+  "refresh": "5s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "schemaVersion": 41,
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "1. Alertas enviadas a las instituciones",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Alertas enviadas por institución (periodo seleccionado)",
+      "description": "Cantidad de envíos registrados por el despachador en la tabla dispatches. Los falsos positivos no se envían a ninguna institución: solo se registran.",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FILTER (WHERE destino = 'external.pnc') AS \"PNC\", count(*) FILTER (WHERE destino = 'external.bomberos') AS \"Bomberos\", count(*) FILTER (WHERE destino = 'external.conred') AS \"CONRED\", count(*) FILTER (WHERE destino = 'aseguradora') AS \"Aseguradora\", count(*) FILTER (WHERE destino = 'ninguno') AS \"No enviadas (falsos positivos)\" FROM dispatches WHERE $__timeFilter(enviado_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bomberos"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CONRED"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Aseguradora"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "No enviadas (falsos positivos)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "A quién se envía cada tipo de alerta",
+      "description": "La columna 'Se envía a' es la regla del despachador (servicios/despachador/despachador.py, DESTINOS). Las columnas de números son los envíos reales del periodo: deben coincidir con la regla.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH regla(orden, tipo, se_envia_a) AS (VALUES (1, 'ROBO_EN_CURSO', 'PNC'), (2, 'ATAQUE_ARMADO', 'PNC'), (3, 'VEHICULO_REPORTADO', 'PNC'), (4, 'VELOCIDAD_ENTRE_CAMARAS', 'PNC'), (5, 'ZONA_ESCOLAR', 'PNC'), (6, 'ACCIDENTE_VIAL', 'PNC, Bomberos y Aseguradora (REST)'), (7, 'INCENDIO_CONFIRMADO', 'Bomberos y CONRED'), (8, 'PANICO_NO_CONFIRMADO', 'Nadie: falso positivo')), envios AS ( SELECT a.alert_type, d.destino FROM dispatches d JOIN alerts a ON a.alert_id = d.alert_id WHERE $__timeFilter(d.enviado_at)) SELECT r.tipo AS \"Tipo de alerta\", r.se_envia_a AS \"Se envía a\", count(e.destino) FILTER (WHERE e.destino = 'external.pnc') AS \"PNC\", count(e.destino) FILTER (WHERE e.destino = 'external.bomberos') AS \"Bomberos\", count(e.destino) FILTER (WHERE e.destino = 'external.conred') AS \"CONRED\", count(e.destino) FILTER (WHERE e.destino = 'aseguradora') AS \"Aseguradora\", count(e.destino) FILTER (WHERE e.destino = 'ninguno') AS \"Sin envío\" FROM regla r LEFT JOIN envios e ON e.alert_type = r.tipo GROUP BY r.orden, r.tipo, r.se_envia_a ORDER BY r.orden"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tipo de alerta"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Se envía a"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PNC"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#808080",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bomberos"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#808080",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CONRED"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#808080",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Aseguradora"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#808080",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sin envío"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#808080",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Alertas enviadas (más recientes primero, sin falsos positivos)",
+      "description": "Cada fila es un envío a una institución: por Kafka (topics external.pnc, external.bomberos, external.conred) o por REST (aseguradora). Use el embudo del encabezado 'Institución' para ver solo una. Clic en una celda para ver el texto completo.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT d.enviado_at AS \"Enviada\", CASE d.destino WHEN 'external.pnc' THEN 'PNC' WHEN 'external.bomberos' THEN 'Bomberos' WHEN 'external.conred' THEN 'CONRED' WHEN 'aseguradora' THEN 'Aseguradora' ELSE 'Nadie' END AS \"Institución\", d.protocolo AS \"Protocolo\", a.alert_type AS \"Tipo de alerta\", a.severity AS \"Severidad\", z.zone_name AS \"Sector\", a.description AS \"Descripción\", d.resultado AS \"Resultado\" FROM dispatches d JOIN alerts a ON a.alert_id = d.alert_id JOIN zones z ON z.zone = a.zone WHERE d.destino <> 'ninguno' AND $__timeFilter(d.enviado_at) ORDER BY d.enviado_at DESC LIMIT 300"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Enviada"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Institución"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Protocolo"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tipo de alerta"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severidad"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICA": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "ALTA": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "MEDIA": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "BAJA": {
+                        "color": "blue",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sector"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Resultado"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "2. Falsos positivos: cuándo un pánico se vuelve alerta real",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "text",
+      "title": "Cómo lo hace el sistema",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 10,
+        "h": 22
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Cómo pasa un pánico a alerta real\n\nUn botón de pánico **por sí solo no moviliza a nadie**: puede ser un error o una broma. El correlador lo confirma con otros sensores del **mismo sector**.\n\n1. **Llega el pánico.** Queda *pendiente* en Redis (`panicos_pendientes`) durante la ventana de correlación (`CORRELATION_WINDOW_SECONDS`: 300 s, o 60 s en la demo).\n2. **Se busca confirmación.** Con cada evento nuevo del sector, de antes o de después del pánico pero dentro de la ventana, se revisan las reglas:\n\n| Pánico | Además debe llegar | Alerta real | Se avisa a |\n|---|---|---|---|\n| PANICO | cámara con vehículo en SALIDA y exceso de velocidad | R01 ROBO_EN_CURSO | PNC |\n| PANICO | disparo con probabilidad de 0.7 o más | R02 ATAQUE_ARMADO | PNC |\n| INCENDIO | reporte de incendio o explosión | R04 INCENDIO_CONFIRMADO | Bomberos y CONRED |\n\n3. **Si una regla se cumple**, el pánico queda confirmado (sale de pendientes), se crea la alerta real y el despachador la envía.\n4. **Si la ventana cierra sin confirmación**, el correlador (revisa cada 10 s) crea `PANICO_NO_CONFIRMADO`: severidad BAJA y estado `FALSO_POSITIVO_PROBABLE`. **No se envía a ninguna institución.**\n\n**No confirman un pánico:** un sonido con probabilidad menor a 0.7 (escenario ESC-RUIDO-01), eventos de otro sector o fuera de la ventana. Las emergencias médicas no tienen regla de confirmación. Si la misma alerta ya se generó en el sector durante la ventana (cooldown), no se repite.\n\n**Falso positivo corregido:** si el correlador va atrasado (carga alta o una caída), puede cerrar la ventana antes de procesar el evento que confirmaba. Al procesarlo, la regla se cumple igual porque usa la hora del evento, y se crea la alerta real. Esta vista lo detecta porque el mismo pánico aparece en las dos alertas, y no lo cuenta como falso positivo real."
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Resultado de los pánicos del periodo",
+      "description": "Confirmados: el pánico participó en una alerta real (R01, R02 o R04). Falsos positivos reales: cerró la ventana sin confirmación y nunca participó en una alerta real. Corregidos: se marcaron como falso positivo pero después se confirmaron. Pendientes: su ventana sigue abierta.",
+      "gridPos": {
+        "x": 10,
+        "y": 26,
+        "w": 14,
+        "h": 5
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH panicos AS ( SELECT event_id, zone FROM events WHERE event_type = 'security.panic_button.pressed' AND $__timeFilter(occurred_at)), confirmados AS ( SELECT DISTINCT u.id FROM alerts a CROSS JOIN unnest(a.source_event_ids) AS u(id) WHERE a.alert_type <> 'PANICO_NO_CONFIRMADO' AND a.created_at >= $__timeFrom()), no_confirmados AS ( SELECT source_event_ids[1] AS id FROM alerts WHERE alert_type = 'PANICO_NO_CONFIRMADO' AND created_at >= $__timeFrom()), estado AS ( SELECT p.zone, CASE WHEN c.id IS NOT NULL AND f.id IS NOT NULL THEN 'corregido' WHEN c.id IS NOT NULL THEN 'confirmado' WHEN f.id IS NOT NULL THEN 'falso' ELSE 'pendiente' END AS estado FROM panicos p LEFT JOIN confirmados c ON c.id = p.event_id LEFT JOIN no_confirmados f ON f.id = p.event_id) SELECT count(*) AS \"Pánicos recibidos\", count(*) FILTER (WHERE estado IN ('confirmado', 'corregido')) AS \"Pasaron a alerta real\", count(*) FILTER (WHERE estado = 'falso') AS \"Falsos positivos reales\", count(*) FILTER (WHERE estado = 'corregido') AS \"Falsos positivos corregidos\", count(*) FILTER (WHERE estado = 'pendiente') AS \"Pendientes (ventana abierta)\", count(*) FILTER (WHERE estado = 'falso')::numeric / greatest(count(*) FILTER (WHERE estado <> 'pendiente'), 1) AS \"Proporción de falsos positivos\" FROM estado"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pasaron a alerta real"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Falsos positivos reales"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Falsos positivos corregidos"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pendientes (ventana abierta)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Proporción de falsos positivos"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Resultado de los pánicos por sector",
+      "gridPos": {
+        "x": 10,
+        "y": 31,
+        "w": 14,
+        "h": 17
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH panicos AS ( SELECT event_id, zone FROM events WHERE event_type = 'security.panic_button.pressed' AND $__timeFilter(occurred_at)), confirmados AS ( SELECT DISTINCT u.id FROM alerts a CROSS JOIN unnest(a.source_event_ids) AS u(id) WHERE a.alert_type <> 'PANICO_NO_CONFIRMADO' AND a.created_at >= $__timeFrom()), no_confirmados AS ( SELECT source_event_ids[1] AS id FROM alerts WHERE alert_type = 'PANICO_NO_CONFIRMADO' AND created_at >= $__timeFrom()), estado AS ( SELECT p.zone, CASE WHEN c.id IS NOT NULL AND f.id IS NOT NULL THEN 'corregido' WHEN c.id IS NOT NULL THEN 'confirmado' WHEN f.id IS NOT NULL THEN 'falso' ELSE 'pendiente' END AS estado FROM panicos p LEFT JOIN confirmados c ON c.id = p.event_id LEFT JOIN no_confirmados f ON f.id = p.event_id) SELECT z.zone_name AS \"Sector\", nullif(count(*) FILTER (WHERE s.estado IN ('confirmado', 'corregido')), 0) AS \"Pasaron a alerta real\", nullif(count(*) FILTER (WHERE s.estado = 'falso'), 0) AS \"Falsos positivos reales\", nullif(count(*) FILTER (WHERE s.estado = 'pendiente'), 0) AS \"Pendientes\" FROM zones z LEFT JOIN estado s ON s.zone = z.zone GROUP BY z.zone, z.zone_name ORDER BY z.zone"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 85,
+            "lineWidth": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pasaron a alerta real"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Falsos positivos reales"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pendientes"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Sector",
+        "stacking": "normal",
+        "showValue": "auto",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Pánicos que pasaron a alerta real",
+      "description": "Cada fila es un pánico que participó en una alerta real: qué otro evento lo confirmó, qué regla se cumplió y a quién se avisó. Demora: segundos entre el pánico y la alerta real (0 si el evento que lo confirmó llegó antes). Un pánico aparece en más de una fila si completó más de una regla. '¿Fue falso positivo antes?' = Sí cuando el sistema primero lo marcó como falso positivo y después lo confirmó (falso positivo corregido).",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH confirmaciones AS ( SELECT p.event_id, p.occurred_at, p.zone, p.data->>'alertType' AS tipo_panico, a.alert_id, a.alert_type, a.rule, a.severity, a.created_at, a.source_event_ids, a.scenario_id FROM alerts a CROSS JOIN unnest(a.source_event_ids) AS u(id) JOIN events p ON p.event_id = u.id AND p.event_type = 'security.panic_button.pressed' WHERE a.alert_type <> 'PANICO_NO_CONFIRMADO' AND $__timeFilter(a.created_at)) SELECT c.occurred_at AS \"Pánico\", z.zone_name AS \"Sector\", c.tipo_panico AS \"Tipo de pánico\", (SELECT string_agg(CASE e.event_type WHEN 'environment.acoustic.detected' THEN 'acústico ' || (e.data->>'soundType') || ' ' || (e.data->>'criticalProbability') WHEN 'citizen.report.created' THEN 'reporte ' || (e.data->>'reportType') WHEN 'traffic.speed.reading' THEN 'radar ' || (e.data->>'speedKmh') || ' km/h ' || (e.data->>'anomalyType') WHEN 'traffic.lpr.read' THEN 'cámara ' || (e.data->>'direction') || ' ' || (e.data->>'estimatedSpeedKmh') || ' km/h' WHEN 'security.panic_button.pressed' THEN 'pánico ' || (e.data->>'alertType') END, ' + ' ORDER BY e.occurred_at) FROM events e WHERE e.event_id = ANY(c.source_event_ids) AND e.event_id <> c.event_id) AS \"Lo confirmó\", c.rule AS \"Regla cumplida\", c.severity AS \"Severidad\", round(extract(epoch FROM c.created_at - c.occurred_at)) AS \"Demora (s)\", (SELECT string_agg(CASE d.destino WHEN 'external.pnc' THEN 'PNC' WHEN 'external.bomberos' THEN 'Bomberos' WHEN 'external.conred' THEN 'CONRED' WHEN 'aseguradora' THEN 'Aseguradora' ELSE 'Nadie' END, ', ' ORDER BY d.id) FROM dispatches d WHERE d.alert_id = c.alert_id) AS \"Se avisó a\", CASE WHEN EXISTS (SELECT 1 FROM alerts f WHERE f.alert_type = 'PANICO_NO_CONFIRMADO' AND f.source_event_ids[1] = c.event_id) THEN 'Sí (corregido)' ELSE 'No' END AS \"¿Fue falso positivo antes?\", c.scenario_id AS \"Escenario\" FROM confirmaciones c JOIN zones z ON z.zone = c.zone ORDER BY c.created_at DESC LIMIT 200"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pánico"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sector"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tipo de pánico"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Regla cumplida"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 215
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severidad"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "CRITICA": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "ALTA": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "MEDIA": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "BAJA": {
+                        "color": "blue",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Demora (s)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 115
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Se avisó a"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "¿Fue falso positivo antes?"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Sí (corregido)": {
+                        "color": "orange",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Escenario"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Falsos positivos reales (no se avisó a ninguna institución)",
+      "description": "Pánicos cuya ventana cerró sin que ninguna regla los confirmara y que nunca participaron en una alerta real. Los falsos positivos corregidos no aparecen aquí. 'Otros eventos en el sector' lista los sensores acústicos, reportes y radares con anomalía del mismo sector dentro de la ventana (antes o después del pánico).",
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres-sjs"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH falsos AS ( SELECT f.created_at, f.scenario_id, p.event_id, p.zone, p.occurred_at, p.data, f.created_at - f.latency_ms * interval '1 millisecond' AS cierre FROM alerts f JOIN events p ON p.event_id = f.source_event_ids[1] WHERE f.alert_type = 'PANICO_NO_CONFIRMADO' AND $__timeFilter(f.created_at) AND NOT EXISTS (SELECT 1 FROM alerts r WHERE r.alert_type <> 'PANICO_NO_CONFIRMADO' AND p.event_id = ANY(r.source_event_ids)) ORDER BY f.created_at DESC LIMIT 200) SELECT f.occurred_at AS \"Pánico\", f.cierre AS \"Cierre de ventana\", z.zone_name AS \"Sector\", f.data->>'alertType' AS \"Tipo de pánico\", f.data->>'origin' AS \"Origen\", coalesce(o.lista, 'ninguno') AS \"Otros eventos en el sector\", CASE WHEN f.data->>'alertType' = 'EMERGENCIA_MEDICA' THEN 'Ninguna regla confirma una emergencia médica' WHEN o.lista IS NULL THEN 'Ningún otro sensor reportó algo en el sector' ELSE 'Hubo eventos, pero no completaron ninguna regla con este pánico' END AS \"Por qué es falso positivo\", f.scenario_id AS \"Escenario\" FROM falsos f JOIN zones z ON z.zone = f.zone LEFT JOIN LATERAL ( SELECT string_agg(CASE e.event_type WHEN 'environment.acoustic.detected' THEN 'acústico ' || (e.data->>'soundType') || ' ' || (e.data->>'criticalProbability') WHEN 'citizen.report.created' THEN 'reporte ' || (e.data->>'reportType') WHEN 'traffic.speed.reading' THEN 'radar ' || (e.data->>'speedKmh') || ' km/h ' || (e.data->>'anomalyType') WHEN 'traffic.lpr.read' THEN 'cámara ' || (e.data->>'direction') || ' ' || (e.data->>'estimatedSpeedKmh') || ' km/h' WHEN 'security.panic_button.pressed' THEN 'pánico ' || (e.data->>'alertType') END, ', ' ORDER BY e.occurred_at) AS lista FROM events e WHERE e.zone = f.zone AND e.event_id <> f.event_id AND e.occurred_at BETWEEN f.occurred_at - (f.cierre - f.occurred_at) AND f.cierre AND (e.event_type IN ('environment.acoustic.detected', 'citizen.report.created') OR (e.event_type = 'traffic.speed.reading' AND e.data->>'anomalyType' <> 'NINGUNA'))) o ON true ORDER BY f.created_at DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true,
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pánico"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cierre de ventana"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sector"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tipo de pánico"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Origen"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Por qué es falso positivo"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 330
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Escenario"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ]
+}

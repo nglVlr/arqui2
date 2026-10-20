@@ -111,6 +111,7 @@ Dashboards en Grafana (carpeta "Monitoreo SJS"):
 2. **Operación y SLOs**: eventos por segundo, latencia p50 y p95, inválidos, balanceo por ingestor, violaciones de SLO y envíos externos.
 3. **Histórico** (perfil full): búsqueda en Elasticsearch y estadísticas de Airflow.
 4. **Bandeja de instituciones**: una tabla por institución (PNC, Bomberos, CONRED y aseguradora) con las alertas que recibió cada una, las más recientes primero (tabla `dispatches`). Clic en una celda para ver la descripción completa.
+5. **Despacho y falsos positivos**: a quién se envía cada tipo de alerta (regla del despachador junto a los envíos reales) y la lista de envíos, que se filtra por institución desde el encabezado de la columna. Abajo explica cómo un pánico pasa a alerta real y separa los pánicos confirmados, los falsos positivos reales (con los eventos del sector y el motivo) y los falsos positivos corregidos (marcados como falsos y confirmados después, cuando el correlador iba atrasado).
 
 ## Scripts del simulador
 

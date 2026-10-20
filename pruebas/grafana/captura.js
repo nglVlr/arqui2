@@ -2,7 +2,7 @@
 // La autenticación se envía solo a Grafana: si se envía también a los servidores
 // de mapas, el navegador bloquea las imágenes (CORS) y el mapa sale sin calles.
 // Uso (desde la raíz del proyecto, PowerShell; las imágenes quedan en pruebas\grafana):
-//   docker run --rm --user root -e PUPPETEER_CACHE_DIR=/home/pptruser/.cache/puppeteer --network monitoreo-sjs_default
+//   docker run --rm --user root -e NODE_PATH=/home/pptruser/node_modules -e PUPPETEER_CACHE_DIR=/home/pptruser/.cache/puppeteer --network monitoreo-sjs_default
 //     -v "${PWD}\pruebas\grafana:/out" -w /out ghcr.io/puppeteer/puppeteer:24.22.3
 //     node captura.js "admin:<GRAFANA_ADMIN_PASSWORD>" "centro-monitoreo=dash1=2250" "bandeja-instituciones=dash4=1100"
 // Cada par es uid=nombre_archivo=alto_en_pixeles.
